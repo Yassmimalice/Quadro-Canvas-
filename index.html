@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paint Clone</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+        }
+        .paint-app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .toolbar {
+            background-color: #e1e1e1;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .tool-button, .color-button {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #999;
+            background-color: #fff;
+            cursor: pointer;
+        }
+        .tool-button.active {
+            background-color: #ddd;
+        }
+        .main-area {
+            display: flex;
+            flex-grow: 1;
+        }
+        .color-palette {
+            background-color: #e1e1e1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .canvas-container {
+            flex-grow: 1;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #drawingCanvas {
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="paint-app">
+        <div class="toolbar">
+            <button class="tool-button active" data-tool="pencil">✏️</button>
+            <button class="tool-button" data-tool="brush">🖌️</button>
+            <button class="tool-button" data-tool="eraser">🧽</button>
+            <button class="tool-button" data-tool="line">📏</button>
+            <button class="tool-button" data-tool="rectangle">🔲</button>
+            <button class="tool-button" data-tool="circle">⭕</button>
+            <input type="color" id="colorPicker" value="#000000">
+            <input type="range" id="brushSize" min="1" max="50" value="5">
+            <button id="undoButton">↩️ Desfazer</button>
+            <button id="redoButton">↪️ Refazer</button>
+            <button id="saveButton">💾 Salvar</button>
+            <button id="clearCanvas">🗑️ Limpar</button>
+        </div>
+        <div class="main-area">
+            <div class="color-palette">
+                <button class="color-button" style="background-color: #000000;"></button>
+                <button class="color-button" style="background-color: #ffffff;"></button>
+                <button class="color-button" style="background-color: #ff0000;"></button>
+                <button class="color-button" style="background-color: #00ff00;"></button>
+                <button class="color-button" style="background-color: #0000ff;"></button>
+                <button class="color-button" style="background-color: #ffff00;"></button>
+                <button class="color-button" style="background-color: #ff00ff;"></button>
+                <button class="color-button" style="background-color: #00ffff;"></button>
+            </div>
+            <div class="canvas-container">
+                <canvas id="drawingCanvas" width="800" height="600"></canvas>
+            </div>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const colorPicker = document.getElementById('colorPicker');
+        const brushSize = document.getElementById('brushSize');
+        const clearButton = document.getElementById('clearCanvas');
+        const undoButton = document.getElementById('undoButton');
+        const redoButton = document.getElementById('redoButton');
+        const saveButton = document.getElementById('saveButton');
+        const toolButtons = document.querySelectorAll('.tool-button');
+        const colorButtons = document.querySelectorAll('.color-button');
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let currentTool = 'pencil';
+        let drawingHistory = [];
+        let historyIndex = -1;
+
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            saveState();
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            ctx.strokeStyle = colorPicker.value;
+            ctx.lineWidth = brushSize.value;
+            ctx.lineCap = 'round';
+
+            switch(currentTool) {
+                case 'pencil':
+                case 'brush':
+                    ctx.lineTo(e.offsetX, e.offsetY);
+                    ctx.stroke();
+                    break;
+                case 'eraser':
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineTo(e.offsetX, e.offsetY);
+                    ctx.stroke();
+                    break;
+                case 'line':
+                case 'rectangle':
+                case 'circle':
+                    let currentCanvas = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    ctx.putImageData(drawingHistory[historyIndex], 0, 0);
+                    ctx.beginPath();
+                    if (currentTool === 'line') {
+                        ctx.moveTo(lastX, lastY);
+                        ctx.lineTo(e.offsetX, e.offsetY);
+                    } else if (currentTool === 'rectangle') {
+                        ctx.rect(lastX, lastY, e.offsetX - lastX, e.offsetY - lastY);
+                    } else if (currentTool === 'circle') {
+                        let radius = Math.sqrt(Math.pow(e.offsetX - lastX, 2) + Math.pow(e.offsetY - lastY, 2));
+                        ctx.arc(lastX, lastY, radius, 0, 2 * Math.PI);
+                    }
+                    ctx.stroke();
+                    break;
+            }
+        }
+
+        function stopDrawing() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            ctx.closePath();
+            if (['line', 'rectangle', 'circle'].includes(currentTool)) {
+                saveState();
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            saveState();
+        }
+
+        function saveState() {
+            historyIndex++;
+            drawingHistory = drawingHistory.slice(0, historyIndex);
+            drawingHistory.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
+
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                ctx.putImageData(drawingHistory[historyIndex], 0, 0);
+            }
+        }
+
+        function redo() {
+            if (historyIndex < drawingHistory.length - 1) {
+                historyIndex++;
+                ctx.putImageData(drawingHistory[historyIndex], 0, 0);
+            }
+        }
+
+        function saveDrawing() {
+            const link = document.createElement('a');
+            link.download = 'drawing.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        clearButton.addEventListener('click', clearCanvas);
+        undoButton.addEventListener('click', undo);
+        redoButton.addEventListener('click', redo);
+        saveButton.addEventListener('click', saveDrawing);
+
+        toolButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                toolButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                currentTool = button.dataset.tool;
+            });
+        });
+
+        colorButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                colorPicker.value = button.style.backgroundColor;
+            });
+        });
+
+        // Inicializar o histórico
+        saveState();
+    </script>
+</body>
+</html>
